@@ -1,19 +1,41 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Poppins, Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
-import { AuthProvider } from "@/contexts/AuthContext"
-import Navbar from "@/components/Navbar"
-import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
-const geist = Geist({ subsets: ["latin"] })
-const geistMono = Geist_Mono({ subsets: ["latin"] })
+const poppins = Poppins({
+  weight: ["400", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-poppins",
+})
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+})
 
 export const metadata: Metadata = {
-  title: "BlueGuard - Ocean Conservation Platform",
-  description: "Classify ocean waste, track cleanup points, and share recycled art creations",
-    generator: 'v0.app'
+  title: "OceanSight - AI Ocean Waste Detection",
+  description: "Advanced AI-powered ocean waste detection and monitoring platform",
+  generator: "v0.app",
+  icons: {
+    icon: [
+      {
+        url: "/icon-light-32x32.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/icon-dark-32x32.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: "/apple-icon.png",
+  },
 }
 
 export default function RootLayout({
@@ -22,15 +44,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geist.className} antialiased ocean-gradient text-white min-h-screen`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <AuthProvider>
-            <Navbar />
-            <main>{children}</main>
-          </AuthProvider>
-          <Analytics />
-        </ThemeProvider>
+    <html lang="en" className="dark">
+      <body className={`${poppins.variable} ${inter.variable} font-sans antialiased`}>
+        {children}
+        <Analytics />
       </body>
     </html>
   )
