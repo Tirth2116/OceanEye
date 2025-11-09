@@ -1,9 +1,12 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import { AiAnalystPanel } from "@/components/ai-analyst-panel"
 import { TrashHeatmap } from "@/components/trash-heatmap"
-import { NewTrashDetectionLog } from "@/components/new-trash-detection-log"
+import { NewTrashDetectionLog, type TrashDetection } from "@/components/new-trash-detection-log"
 import { SonarViewer } from "@/components/sonar-viewer"
 import { SwarmSimulation } from "@/components/swarm-simulation"
 
@@ -12,6 +15,42 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ onBackToLanding }: DashboardViewProps) {
+  const [detections, setDetections] = useState<TrashDetection[]>([])
+
+  // Poll for new detections every 2 seconds
+  useEffect(() => {
+    const fetchDetections = async () => {
+      try {
+        const response = await fetch("/api/detections")
+        if (response.ok) {
+          const data = await response.json()
+          setDetections(data.detections || [])
+        }
+      } catch (error) {
+        console.error("Failed to fetch detections:", error)
+      }
+    }
+
+    // Initial fetch
+    fetchDetections()
+
+    // Poll every 2 seconds
+    const interval = setInterval(fetchDetections, 2000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Clear detections and go back to landing
+  const handleBackToLanding = async () => {
+    try {
+      await fetch("/api/detections", { method: "DELETE" })
+      setDetections([])
+    } catch (error) {
+      console.error("Failed to clear detections:", error)
+    }
+    onBackToLanding?.()
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -19,7 +58,7 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
 
       {/* Main Dashboard Grid */}
       <div className="container mx-auto px-4 pt-4 md:px-6 lg:px-8">
-        <Button variant="outline" size="sm" onClick={onBackToLanding}>
+        <Button variant="outline" size="sm" onClick={handleBackToLanding}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to landing
         </Button>
@@ -32,7 +71,7 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
               <AiAnalystPanel />
             </div>
             <div>
-              <NewTrashDetectionLog />
+              <NewTrashDetectionLog detections={detections} />
             </div>
           </div>
 
