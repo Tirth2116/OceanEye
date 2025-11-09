@@ -8,4 +8,6 @@ torch
 torchvision
 Flask
 flask-cors
+earthengine-api
+python-dotenv
 

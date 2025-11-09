@@ -190,7 +190,7 @@ export default function LandingPage3D({ onEnter }: LandingPageProps) {
                 <div className="absolute inset-0 blur-lg bg-white/20 -z-10" />
               </div>
               <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-balance text-white">
-                Ocean<span className="text-sky-200">Sight</span>
+                Ocean<span className="text-sky-200">Eye</span>
               </h1>
             </div>
           </div>

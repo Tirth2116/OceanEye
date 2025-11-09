@@ -35,6 +35,11 @@ import requests
 import re
 from PIL import Image
 
+# Load environment variables (e.g., GEMINI_API_KEY) from trash-detection/config.env if present
+try:
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    load_dotenv = None
 # Import satellite monitor
 SATELLITE_AVAILABLE = False
 try:
@@ -68,16 +73,28 @@ FRONTEND_PUBLIC = REPO_ROOT / "frontend" / "public"
 DETECTIONS_DIR = FRONTEND_PUBLIC / "detections"
 UPLOADS_DIR = THIS_DIR / "uploads"
 OUTPUTS_DIR = THIS_DIR / "outputs"
+TRASH_DET_DIR = THIS_DIR / "trash-detection"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
 
+if load_dotenv:
+    try:
+        # Prefer explicit config.env inside trash-detection
+        cfg_path = TRASH_DET_DIR / "config.env"
+        if cfg_path.exists():
+            load_dotenv(str(cfg_path))
+        else:
+            # Fallback: load default .env files if any
+            load_dotenv()
+    except Exception:
+        pass
+
 NEXT_DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 # Use current Python interpreter (works cross-platform)
 PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable or "python")
 YOLO_SCRIPT = THIS_DIR / "yolov8_seg_track.py"
-TRASH_DET_DIR = THIS_DIR / "trash-detection"
 TRASH_ANALYZER_PATH = TRASH_DET_DIR / "trash_analyzer.py"
 SEND_TO_DASHBOARD_PATH = TRASH_DET_DIR / "send_to_dashboard.py"
 MODEL_PATH = THIS_DIR / "best.pt"
@@ -550,6 +567,204 @@ def get_satellite_summary():
         
     except Exception as e:
         print(f"Error in satellite summary: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/satellite/cities", methods=["GET"])
+def get_available_cities():
+    """Get list of predefined coastal cities"""
+    try:
+        from satellite_monitor import COASTAL_CITIES
+        
+        cities = []
+        for city_name, data in COASTAL_CITIES.items():
+            cities.append({
+                'name': city_name.title(),
+                'center': data['center'],
+                'coordinates': data['coordinates']
+            })
+        
+        return jsonify({
+            "success": True,
+            "cities": cities,
+            "count": len(cities)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting cities: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/satellite/analyze", methods=["GET"])
+def analyze_city():
+    """
+    Analyze satellite data for a specific city
+    Query params:
+    - city: city name (required)
+    - days: number of days to analyze (default: 90)
+    """
+    try:
+        from datetime import datetime, timedelta
+        from satellite_monitor import geocode_city
+        
+        city_name = request.args.get('city')
+        days = int(request.args.get('days', 90))
+        
+        if not city_name:
+            return jsonify({"error": "City name is required"}), 400
+        
+        # Geocode the city
+        location = geocode_city(city_name)
+        if not location:
+            return jsonify({"error": f"Could not find location for: {city_name}"}), 404
+        
+        # Get date range
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # Get satellite data
+        if SATELLITE_AVAILABLE:
+            monitor = get_monitor()
+            data = monitor.get_time_series_data(
+                location['coordinates'],
+                start_date,
+                end_date
+            )
+            fdi_values = [d['fdi'] for d in data if d.get('fdi') is not None]
+            analysis = monitor.analyze_pollution_level(fdi_values)
+            using_mock = False
+        else:
+            # Mock data
+            data = [{
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'ndci': 0.22,
+                'ndwi': 0.41,
+                'ndvi': 0.16,
+                'fdi': 0.34
+            }]
+            analysis = {
+                'status': 'moderate',
+                'level': 3,
+                'trend': 'stable',
+                'avgFdi': 0.34,
+                'recentAvg': 0.34
+            }
+            using_mock = True
+        
+        return jsonify({
+            "success": True,
+            "location": {
+                "name": location['name'],
+                "center": location['center'],
+                "coordinates": location['coordinates'],
+                "source": location['source']
+            },
+            "data": data,
+            "analysis": analysis,
+            "dateRange": {
+                "start": start_date,
+                "end": end_date,
+                "days": days
+            },
+            "usingMockData": using_mock
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        print(f"Error analyzing city: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/satellite/custom", methods=["POST"])
+def analyze_custom_location():
+    """
+    Analyze satellite data for custom coordinates
+    Body JSON:
+    {
+        "name": "Custom Location",
+        "coordinates": [min_lon, min_lat, max_lon, max_lat],
+        "days": 90
+    }
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "JSON body required"}), 400
+        
+        location_name = data.get('name', 'Custom Location')
+        coordinates = data.get('coordinates')
+        days = int(data.get('days', 90))
+        
+        if not coordinates or len(coordinates) != 4:
+            return jsonify({
+                "error": "coordinates must be [min_lon, min_lat, max_lon, max_lat]"
+            }), 400
+        
+        # Calculate center
+        center_lat = (coordinates[1] + coordinates[3]) / 2
+        center_lon = (coordinates[0] + coordinates[2]) / 2
+        
+        # Get date range
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # Get satellite data
+        if SATELLITE_AVAILABLE:
+            monitor = get_monitor()
+            sat_data = monitor.get_time_series_data(
+                coordinates,
+                start_date,
+                end_date
+            )
+            fdi_values = [d['fdi'] for d in sat_data if d.get('fdi') is not None]
+            analysis = monitor.analyze_pollution_level(fdi_values)
+            using_mock = False
+        else:
+            # Mock data
+            sat_data = [{
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'ndci': 0.22,
+                'ndwi': 0.41,
+                'ndvi': 0.16,
+                'fdi': 0.34
+            }]
+            analysis = {
+                'status': 'moderate',
+                'level': 3,
+                'trend': 'stable',
+                'avgFdi': 0.34,
+                'recentAvg': 0.34
+            }
+            using_mock = True
+        
+        return jsonify({
+            "success": True,
+            "location": {
+                "name": location_name,
+                "center": [center_lat, center_lon],
+                "coordinates": coordinates
+            },
+            "data": sat_data,
+            "analysis": analysis,
+            "dateRange": {
+                "start": start_date,
+                "end": end_date,
+                "days": days
+            },
+            "usingMockData": using_mock
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        print(f"Error analyzing custom location: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

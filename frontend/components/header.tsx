@@ -1,14 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { Waves, LayoutDashboard, Radio, Satellite, User } from "lucide-react"
+import { Waves, LayoutDashboard, Radio, Satellite, User, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 const tabs = [
   { name: "Dashboard", icon: LayoutDashboard, value: "dashboard" },
-  { name: "Swarm", icon: Radio, value: "swarm" },
   { name: "Satellite", icon: Satellite, value: "satellite" },
+  { name: "Visualizer", icon: Sparkles, value: "visualizer" },
 ]
 
 interface HeaderProps {
@@ -28,7 +28,7 @@ export function Header({ activeView = "dashboard", onViewChange }: HeaderProps) 
             <div className="absolute inset-0 blur-lg bg-primary/30 -z-10" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-balance">
-            Ocean<span className="text-primary">Sight</span>
+            Ocean<span className="text-primary">Eye</span>
           </h1>
         </div>
 

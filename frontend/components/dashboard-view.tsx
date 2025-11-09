@@ -9,7 +9,10 @@ import { TrashHeatmap } from "@/components/trash-heatmap"
 import { NewTrashDetectionLog, type TrashDetection } from "@/components/new-trash-detection-log"
 import { SonarViewer } from "@/components/sonar-viewer"
 import { SwarmSimulation } from "@/components/swarm-simulation"
+import { SwarmPathVisualizer } from "@/components/swarm-path-visualizer"
+import { PathVisualizer } from "@/components/path-visualizer"
 import { SatelliteMonitor } from "@/components/satellite-monitor"
+import { SatelliteCityAnalyzer } from "@/components/satellite-city-analyzer"
 
 interface DashboardViewProps {
   onBackToLanding?: () => void
@@ -98,7 +101,7 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
         {/* Swarm View */}
         {currentView === "swarm" && (
           <div className="space-y-6">
-            <SwarmSimulation />
+            <SwarmPathVisualizer />
             
             <footer className="mt-12 text-center">
               <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
@@ -109,7 +112,14 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
         {/* Satellite View */}
         {currentView === "satellite" && (
           <div className="space-y-6">
-            <SatelliteMonitor />
+            <SatelliteCityAnalyzer />
+          </div>
+        )}
+
+        {/* Visualizer View */}
+        {currentView === "visualizer" && (
+          <div className="space-y-6">
+            <PathVisualizer />
           </div>
         )}
       </div>

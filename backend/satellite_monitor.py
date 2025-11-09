@@ -1,11 +1,12 @@
 """
-Satellite Monitoring Module for OceanSight
+Satellite Monitoring Module for OceanEye
 Integrates Google Earth Engine for ocean health monitoring
 """
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import json
+import requests
 
 try:
     import ee
@@ -21,20 +22,92 @@ MUMBAI_AOI = {
     'name': 'Mumbai Coast'
 }
 
+# Popular coastal cities with predefined coordinates
+COASTAL_CITIES = {
+    'mumbai': {'coordinates': [72.775, 18.875, 72.985, 19.255], 'center': [19.0760, 72.8777]},
+    'new york': {'coordinates': [-74.05, 40.65, -73.95, 40.75], 'center': [40.7128, -74.0060]},
+    'san francisco': {'coordinates': [-122.52, 37.70, -122.35, 37.82], 'center': [37.7749, -122.4194]},
+    'los angeles': {'coordinates': [-118.50, 33.70, -118.15, 34.05], 'center': [34.0522, -118.2437]},
+    'miami': {'coordinates': [-80.30, 25.70, -80.10, 25.85], 'center': [25.7617, -80.1918]},
+    'singapore': {'coordinates': [103.60, 1.15, 104.05, 1.47], 'center': [1.3521, 103.8198]},
+    'sydney': {'coordinates': [151.15, -33.95, 151.30, -33.80], 'center': [-33.8688, 151.2093]},
+    'tokyo': {'coordinates': [139.70, 35.60, 139.90, 35.75], 'center': [35.6762, 139.6503]},
+    'hong kong': {'coordinates': [114.10, 22.25, 114.30, 22.40], 'center': [22.3193, 114.1694]},
+    'dubai': {'coordinates': [55.10, 25.05, 55.40, 25.30], 'center': [25.2048, 55.2708]},
+    'barcelona': {'coordinates': [2.10, 41.35, 2.25, 41.45], 'center': [41.3851, 2.1734]},
+    'rio de janeiro': {'coordinates': [-43.30, -23.05, -43.10, -22.85], 'center': [-22.9068, -43.1729]},
+}
+
+def geocode_city(city_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Convert city name to coordinates using Nominatim (OpenStreetMap)
+    Returns AOI coordinates and center point
+    """
+    # Check predefined cities first
+    city_lower = city_name.lower().strip()
+    if city_lower in COASTAL_CITIES:
+        return {
+            'name': city_name.title(),
+            'coordinates': COASTAL_CITIES[city_lower]['coordinates'],
+            'center': COASTAL_CITIES[city_lower]['center'],
+            'source': 'predefined'
+        }
+    
+    # Use Nominatim API for geocoding
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            'q': city_name,
+            'format': 'json',
+            'limit': 1
+        }
+        headers = {
+            'User-Agent': 'OceanHub-SatelliteMonitor/1.0'
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=5)
+        data = response.json()
+        
+        if data and len(data) > 0:
+            result = data[0]
+            lat = float(result['lat'])
+            lon = float(result['lon'])
+            
+            # Create AOI box around the city (approximately 20km radius)
+            lat_offset = 0.18  # ~20km in latitude
+            lon_offset = 0.18  # ~20km in longitude (varies by latitude)
+            
+            return {
+                'name': result.get('display_name', city_name),
+                'coordinates': [
+                    lon - lon_offset,
+                    lat - lat_offset,
+                    lon + lon_offset,
+                    lat + lat_offset
+                ],
+                'center': [lat, lon],
+                'source': 'geocoded'
+            }
+    except Exception as e:
+        print(f"Geocoding error for {city_name}: {e}")
+    
+    return None
+
 class SatelliteMonitor:
     """Monitor ocean health using satellite imagery"""
     
     def __init__(self, project_id: Optional[str] = None):
-        self.project_id = project_id or os.environ.get('GEE_PROJECT_ID')
+        self.project_id = project_id or os.environ.get('GEE_PROJECT_ID', 'nidaan-ai')
         self.initialized = False
         
         if EE_AVAILABLE and self.project_id:
             try:
                 ee.Initialize(project=self.project_id)
                 self.initialized = True
-                print(f"Earth Engine initialized with project: {self.project_id}")
+                print(f"✓ Earth Engine initialized with project: {self.project_id}")
             except Exception as e:
-                print(f"Failed to initialize Earth Engine: {e}")
+                print(f"⚠ Failed to initialize Earth Engine: {e}")
+                print(f"  Run 'earthengine authenticate' to set up credentials")
                 self.initialized = False
     
     def calculate_indices(self, image):
@@ -84,8 +157,8 @@ class SatelliteMonitor:
             # Define AOI
             aoi = ee.Geometry.Rectangle(aoi_coords)
             
-            # Filter Sentinel-2 collection
-            sentinel2 = ee.ImageCollection('COPERNICUS/S2') \
+            # Filter Sentinel-2 Harmonized collection (improved dataset)
+            sentinel2 = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
                          .filterBounds(aoi) \
                          .filterDate(start_date, end_date) \
                          .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)) \
@@ -159,7 +232,7 @@ class SatelliteMonitor:
             aoi = ee.Geometry.Rectangle(aoi_coords)
             
             # Get latest image
-            image = ee.ImageCollection('COPERNICUS/S2') \
+            image = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
                      .filterBounds(aoi) \
                      .filterDate(
                          (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'),

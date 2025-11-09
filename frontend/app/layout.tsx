@@ -16,7 +16,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: "OceanSight - AI Ocean Waste Detection",
+  title: "OceanEye - AI Ocean Waste Detection",
   description: "Advanced AI-powered ocean waste detection and monitoring platform",
   generator: "v0.app",
   icons: {
