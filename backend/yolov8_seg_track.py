@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 import shutil
 import subprocess
+import json
+from collections import defaultdict
 
 
 def main():
@@ -77,6 +79,11 @@ def main():
 	if not args.no_display:
 		cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
 
+	# Track unique objects by tracker id per class for visualization
+	# If tracker ids are not available, we will fallback to per-frame distinct class counting
+	seen_ids_per_class: dict[str, set] = defaultdict(set)
+	per_frame_class_counts = defaultdict(int)
+	
 	frame_index = 0
 	while True:
 		ret, frame = cap.read()
@@ -87,6 +94,45 @@ def main():
 		# Run tracking with persistence for continuous IDs across frames
 		results = model.track(frame, persist=True, verbose=False)
 
+		# Count detections by class name (distinct)
+		if results and len(results) > 0:
+			result = results[0]
+			if hasattr(result, 'boxes') and result.boxes is not None:
+				# Prefer tracking by persistent IDs if available
+				frame_classes = set()
+				for idx, box in enumerate(result.boxes):
+					try:
+						if hasattr(box, 'cls') and box.cls is not None:
+							class_id = int(box.cls[0])
+							class_name = model.names.get(class_id, f"class_{class_id}")
+						else:
+							continue
+						track_id = None
+						# Some Ultralytics versions expose track ids via box.id or result.boxes.id tensor
+						if hasattr(box, 'id') and box.id is not None:
+							try:
+								track_id = int(box.id[0])
+							except Exception:
+								try:
+									track_id = int(box.id)
+								except Exception:
+									track_id = None
+						elif hasattr(result.boxes, 'id') and result.boxes.id is not None:
+							try:
+								track_id = int(result.boxes.id[idx])
+							except Exception:
+								track_id = None
+						if track_id is not None:
+							seen_ids_per_class[class_name].add(track_id)
+						else:
+							# Fallback: mark class present in this frame
+							frame_classes.add(class_name)
+					except Exception:
+						continue
+				# If we didn't have track ids, increment per-frame class presence
+				for c in frame_classes:
+					per_frame_class_counts[c] += 1
+		
 		# Get the annotated frame (masks/boxes/labels drawn)
 		annotated_frame = results[0].plot() if results else frame
 
@@ -116,6 +162,20 @@ def main():
 	if not args.no_display:
 		cv2.destroyAllWindows()
 	print(f"[YOLO] Done. Output saved to: {output_path}", flush=True)
+	
+	# Save detection counts to JSON for visualization
+	counts_path = Path(output_path).with_suffix('.counts.json')
+	# Prefer unique tracked objects; if none, use per-frame distinct presence
+	if any(len(s) > 0 for s in seen_ids_per_class.values()):
+		counts_dict = {k: len(v) for k, v in seen_ids_per_class.items()}
+		counts_dict["_metric"] = "distinct_tracked_objects"
+	else:
+		counts_dict = {k: int(v) for k, v in per_frame_class_counts.items()}
+		counts_dict["_metric"] = "distinct_frames_with_class"
+	with open(counts_path, 'w') as f:
+		json.dump(counts_dict, f, indent=2)
+	print(f"[YOLO] Detection counts saved to: {counts_path}", flush=True)
+	print(f"[YOLO] Detections summary: {counts_dict}", flush=True)
 
 	# Optional: transcode to H.264 using ffmpeg if available and we didn't already use H.264
 	if selected_codec != "avc1":
