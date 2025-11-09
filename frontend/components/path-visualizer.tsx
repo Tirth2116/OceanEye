@@ -128,20 +128,16 @@ const CANVAS_ASPECT = 16 / 9
 
 const DEFAULT_COUNT_SAMPLE = JSON.stringify(
   {
-    trash_plastic: 3,
-    trash_metal: 2,
-    trash_paper: 1,
-    trash_fabric: 1,
-    trash_wood: 1,
-    trash_fishing_gear: 1,
-    trash_etc: 1,
+    trash_plastic: 30,
+    trash_metal: 10,
   },
   null,
   2,
 )
 
 export function PathVisualizer() {
-  const [trashPoints, setTrashPoints] = useState<TrashPoint[]>(() => parseInput(DEFAULT_INPUT))
+  // Initialize with 30 plastics and 10 metals (counts-based dataset)
+  const [trashPoints, setTrashPoints] = useState<TrashPoint[]>(() => parseInput(DEFAULT_COUNT_SAMPLE))
   const [isPlaying, setIsPlaying] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
