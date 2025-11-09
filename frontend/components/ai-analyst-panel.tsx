@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Brain, Camera, Upload, Video } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+interface AiAnalystPanelProps {
+  onDetectionCountsChange?: (counts: Record<string, number>) => void
+}
 
-export function AiAnalystPanel() {
+export function AiAnalystPanel({ onDetectionCountsChange }: AiAnalystPanelProps = {}) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -15,6 +18,7 @@ export function AiAnalystPanel() {
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   const [outputUrl, setOutputUrl] = useState<string | null>(null)
+  const [detectionCounts, setDetectionCounts] = useState<Record<string, number>>({})
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -72,6 +76,17 @@ export function AiAnalystPanel() {
                 }
               } else {
                 setOutputUrl(null)
+              }
+              // Fetch detection counts for visualization
+              try {
+                const countsRes = await fetch("http://localhost:5001/detection-counts")
+                const countsData = await countsRes.json()
+                if (countsData.available && countsData.counts) {
+                  setDetectionCounts(countsData.counts)
+                  onDetectionCountsChange?.(countsData.counts)
+                }
+              } catch (err) {
+                console.error("Failed to fetch detection counts:", err)
               }
               // Revoke preview URL to free memory
               if (localUrl) URL.revokeObjectURL(localUrl)
@@ -293,6 +308,7 @@ export function AiAnalystPanel() {
             onChange={handleFileChange}
           />
         </div>
+
       </CardContent>
     </Card>
   )

@@ -9,6 +9,9 @@ import { TrashHeatmap } from "@/components/trash-heatmap"
 import { NewTrashDetectionLog, type TrashDetection } from "@/components/new-trash-detection-log"
 import { SonarViewer } from "@/components/sonar-viewer"
 import { SwarmSimulation } from "@/components/swarm-simulation"
+import { TrashCollectionVisualizer } from "@/components/trash-collection-visualizer"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Brain } from "lucide-react"
 
 interface DashboardViewProps {
   onBackToLanding?: () => void
@@ -16,6 +19,7 @@ interface DashboardViewProps {
 
 export function DashboardView({ onBackToLanding }: DashboardViewProps) {
   const [detections, setDetections] = useState<TrashDetection[]>([])
+  const [detectionCounts, setDetectionCounts] = useState<Record<string, number>>({})
 
   // Poll for new detections every 2 seconds
   useEffect(() => {
@@ -72,12 +76,30 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
           {/* Top Row - AI Analyst (larger) */}
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <AiAnalystPanel />
+              <AiAnalystPanel onDetectionCountsChange={setDetectionCounts} />
             </div>
             <div>
               <NewTrashDetectionLog detections={detections} />
             </div>
           </div>
+
+          {/* Collection Route Visualization - Full Width */}
+          {Object.keys(detectionCounts).length > 0 && (
+            <Card className="glass-panel border-primary/20">
+              <CardHeader className="border-b border-border/50 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Brain className="h-6 w-6 text-primary" />
+                    <div className="absolute inset-0 blur-md bg-primary/40 -z-10" />
+                  </div>
+                  <CardTitle className="text-xl font-bold">Collection Route Visualization</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <TrashCollectionVisualizer counts={detectionCounts} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Middle Row - Heatmap and Sonar */}
           <div className="grid gap-6 lg:grid-cols-2">
@@ -85,7 +107,7 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
             <SonarViewer />
           </div>
 
-          {/* Bottom Row - Swarm Simulation */}
+          {/* Swarm Simulation Row */}
           <SwarmSimulation />
         </div>
 
