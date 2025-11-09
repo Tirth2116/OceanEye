@@ -15,9 +15,29 @@ export function AiAnalystPanel() {
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   const [outputUrl, setOutputUrl] = useState<string | null>(null)
+  const [funFact, setFunFact] = useState<string>("")
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Ocean plastics fun facts source list
+  const ALL_FUN_FACTS: string[] = [
+    "Over 8 million tons of plastic enter the oceans every year.",
+    "Plastic can take more than 400 years to degrade in the ocean.",
+    "By 2050, plastic in the ocean could outweigh fish by mass if trends continue.",
+    "Around 700 marine species are harmed by plastic through ingestion or entanglement.",
+    "Sea turtles often mistake plastic bags for jellyfish, a key part of their diet.",
+    "Microplastics have been found in seafood, drinking water, and even sea salt.",
+    "Ghost fishing gear (lost nets and lines) continues trapping marine life for years.",
+    "Only about 9% of all plastic ever produced has been recycled globally.",
+  ]
+
+  useEffect(() => {
+    // Pick one random fact on mount
+    const i = Math.floor(Math.random() * ALL_FUN_FACTS.length)
+    setFunFact(ALL_FUN_FACTS[i])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleUploadClick = () => {
     fileInputRef.current?.click()
@@ -186,16 +206,14 @@ export function AiAnalystPanel() {
           </div>
         </div>
 
-        {/* AI Summary */}
+        {/* Fun Fact */}
         <div className="glass-panel rounded-xl p-5 mb-4 border border-primary/20">
           <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
             <Brain className="h-4 w-4 text-primary" />
-            AI Summary
+            Fun Fact
           </h3>
           <p className="text-base leading-relaxed text-balance">
-            {
-              "Most waste detected is plastic bottles and wrappers. High concentration detected in sector B-7. Recent increase suggests nearby pollution source. Recommend immediate collection protocol."
-            }
+            {funFact}
           </p>
         </div>
 
