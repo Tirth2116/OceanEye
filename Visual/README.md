@@ -10,6 +10,7 @@ This folder contains the complete implementation of the AI-powered trash detecti
   - `button.tsx` - Button component (self-contained version)
 - **`DEPENDENCIES.md`** - Complete dependency documentation
 
+
 ## Features
 
 ### Input Formats

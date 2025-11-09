@@ -492,9 +492,13 @@ function parseArrayInput(arrayInput: unknown[]): TrashPoint[] {
       throw new Error(`Detection at index ${i} is missing numeric x/y coordinates.`)
     }
 
+    if (item.type === undefined) {
+      throw new Error(`Detection at index ${i} is missing a type.`)
+    }
+
     const type = resolveType(item.type)
     if (!type) {
-      throw new Error(`Detection at index ${i} has an unknown type: ${String(item?.type)}`)
+      throw new Error(`Detection at index ${i} has an unknown type: ${String(item.type)}`)
     }
 
     result.push({
@@ -518,7 +522,9 @@ function parseCountsDictionary(dictionary: Record<string, number>): TrashPoint[]
     if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) {
       throw new Error(`Invalid count for type "${rawType}". Counts must be positive numbers.`)
     }
-    const type = resolveType(rawType)
+    // Convert string to number if it's numeric, otherwise use as string
+    const typeValue: number | TrashLabel = !isNaN(Number(rawType)) ? Number(rawType) : rawType as TrashLabel
+    const type = resolveType(typeValue)
     if (!type) {
       throw new Error(`Unknown trash type "${rawType}".`)
     }

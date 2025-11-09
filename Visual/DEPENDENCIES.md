@@ -98,3 +98,4 @@ The visualizer uses Tailwind CSS classes. Ensure your project has:
 
 The component will work with standard Tailwind, but the ocean-themed gradients and glassmorphism effects come from the main app's global CSS.
 
+
