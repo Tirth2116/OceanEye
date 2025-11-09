@@ -2,12 +2,17 @@
 
 # dependencies
 /node_modules
+node_modules/
+**/node_modules/**
 .venv
 
 # next.js
 /.next/
 /out/
+frontend/.next/
+**/.next/**
 
+/Users/rudra/Documents/Hackathons/OceanHub/frontend/node_modules
 # production
 /build
 
@@ -26,3 +31,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend artifacts
+backend/outputs/
+backend/uploads/

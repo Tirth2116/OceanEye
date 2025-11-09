@@ -1,0 +1,11 @@
+numpy
+Pillow
+google-generativeai
+requests
+ultralytics
+opencv-python
+torch
+torchvision
+Flask
+flask-cors
+
