@@ -24,7 +24,11 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
         const response = await fetch("/api/detections")
         if (response.ok) {
           const data = await response.json()
-          setDetections(data.detections || [])
+          // Filter out "Medium" threat level detections
+          const filtered = (data.detections || []).filter(
+            (d: TrashDetection) => d.threatLevel !== "Medium"
+          )
+          setDetections(filtered)
         }
       } catch (error) {
         console.error("Failed to fetch detections:", error)

@@ -29,6 +29,9 @@ interface NewTrashDetectionLogProps {
 }
 
 export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogProps) {
+  // Filter out Medium threat level detections
+  const filteredDetections = detections.filter(d => d.threatLevel !== "Medium")
+  
   // Normalize various incoming image path formats to valid public URLs
   const normalizeImageSrc = (image?: string): string => {
     if (!image || typeof image !== "string") return "/placeholder.svg"
@@ -176,7 +179,7 @@ export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogPr
   }
 
   // Empty state when no detections
-  if (detections.length === 0) {
+  if (filteredDetections.length === 0) {
     return (
       <Card className="glass-panel border-primary/20 overflow-hidden h-full">
         <CardHeader className="border-b border-border/50 pb-4">
@@ -228,7 +231,7 @@ export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogPr
           <div className="flex-1">
             <CardTitle className="text-xl font-bold text-balance">New Trash Detected</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              {detections.length} {detections.length === 1 ? "object" : "objects"} found
+              {filteredDetections.length} {filteredDetections.length === 1 ? "object" : "objects"} found
             </p>
           </div>
         </div>
@@ -239,7 +242,7 @@ export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogPr
       <CardContent className="p-0">
         <ScrollArea className="h-[520px]">
           <div className="p-6 space-y-4">
-            {detections.map((detection) => (
+            {filteredDetections.map((detection) => (
               <button
                 key={detection.id}
                 onClick={() => setSelectedDetection(detection)}
@@ -270,7 +273,7 @@ export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogPr
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="font-semibold text-sm text-balance">{detection.trashType}</h4>
-                    <Badge
+                    {/* <Badge
                       variant="outline"
                       className={
                         detection.size === "Large"
@@ -281,7 +284,7 @@ export function NewTrashDetectionLog({ detections = [] }: NewTrashDetectionLogPr
                       }
                     >
                       {detection.size}
-                    </Badge>
+                    </Badge> */}
                   </div>
 
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">

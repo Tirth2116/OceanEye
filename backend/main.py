@@ -24,6 +24,7 @@ import subprocess
 import threading
 import uuid
 import json
+import importlib.util
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -31,11 +32,19 @@ from werkzeug.utils import secure_filename
 
 import requests
 import re
+from PIL import Image
 
 try:
     import google.generativeai as genai  # type: ignore
 except Exception:
     genai = None
+
+try:
+    import numpy as np
+    from PIL import Image
+except ImportError:
+    np = None  # type: ignore
+    Image = None  # type: ignore
 
 
 # -----------------------------
@@ -55,6 +64,9 @@ DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
 NEXT_DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
 PYTHON_BIN = os.environ.get("PYTHON_BIN", "python3")
 YOLO_SCRIPT = THIS_DIR / "yolov8_seg_track.py"
+TRASH_DET_DIR = THIS_DIR / "trash-detection"
+TRASH_ANALYZER_PATH = TRASH_DET_DIR / "trash_analyzer.py"
+SEND_TO_DASHBOARD_PATH = TRASH_DET_DIR / "send_to_dashboard.py"
 MODEL_PATH = THIS_DIR / "best.pt"
 
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -63,13 +75,36 @@ FIXED_OUTPUT_NAME = "output.mp4"
 # -----------------------------
 # Utilities
 # -----------------------------
+def _sanitize_ext(ext: str) -> str:
+    ext = (ext or "").lower()
+    if ext in {".png", ".jpg", ".jpeg", ".webp"}:
+        return ext
+    # If it looks like ".png1", strip trailing digits and re-check
+    import re as _re
+    m = _re.match(r"\.(png|jpe?g|webp)\d+$", ext, flags=_re.IGNORECASE)
+    if m:
+        base = "." + m.group(1).lower()
+        return base if base in {".png", ".jpg", ".jpeg", ".webp"} else ".png"
+    return ".png"
+
+def _normalize_public_image_url(url_path: str) -> str:
+    s = (url_path or "").strip()
+    if not s.startswith("/"):
+        s = "/" + s
+    try:
+        import re as _re
+        s = _re.sub(r"\.(png|jpe?g|webp)\d+$", lambda m: "." + m.group(1), s, flags=_re.IGNORECASE)
+    except Exception:
+        pass
+    return s
+
 def copy_image_to_public(src_path: Path) -> str:
     """
     Copy image file to frontend/public/detections and return the public URL path.
     """
     DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = int(time.time() * 1000)
-    ext = src_path.suffix or ".png"
+    ext = _sanitize_ext(src_path.suffix or ".png")
     dest_name = f"detection_{timestamp}{ext}"
     dest_path = DETECTIONS_DIR / dest_name
     shutil.copy2(src_path, dest_path)
@@ -167,7 +202,186 @@ def classify_image_with_gemini(image_path: Path) -> Dict[str, Any]:
             "probable_source": "Unknown",
         }
 
+# Prefer premade analyzer helpers if available
+def _load_module_from_path(mod_name: str, file_path: Path):
+    try:
+        spec = importlib.util.spec_from_file_location(mod_name, str(file_path))
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # type: ignore[attr-defined]
+            return module
+    except Exception:
+        return None
+    return None
 
+def classify_image_with_premade(image_path: Path) -> Dict[str, Any]:
+    """
+    Use backend/trash-detection/trash_analyzer.py's classify_with_gemini on the full frame.
+    Falls back to local classify_image_with_gemini if import fails.
+    """
+    trash_analyzer = _load_module_from_path("trash_analyzer_mod", TRASH_ANALYZER_PATH)
+    if trash_analyzer and hasattr(trash_analyzer, "classify_with_gemini"):
+        try:
+            img = Image.open(image_path).convert("RGB")
+            label, raw_text, _prompt = trash_analyzer.classify_with_gemini(img)  # type: ignore[attr-defined]
+            data: Dict[str, Any] = {}
+            if raw_text:
+                try:
+                    clean = raw_text.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(clean)
+                except Exception:
+                    data = {}
+            if not data:
+                data = {
+                    "label": (label or "Unknown"),
+                    "threat_level": "Medium",
+                    "decomposition_years": 100,
+                    "environmental_impact": "No structured analysis available.",
+                    "disposal_instructions": "Refer to local recycling guidance.",
+                    "probable_source": "Unknown",
+                }
+            return {
+                "label": data.get("label", label or "Unknown"),
+                "threat_level": data.get("threat_level", "Medium"),
+                "decomposition_years": data.get("decomposition_years", 100),
+                "environmental_impact": data.get("environmental_impact", "Environmental impact data unavailable."),
+                "disposal_instructions": data.get("disposal_instructions", "Disposal instructions unavailable."),
+                "probable_source": data.get("probable_source", "Unknown"),
+            }
+        except Exception:
+            pass
+    return classify_image_with_gemini(image_path)
+
+
+def segment_and_classify_frame(image_path: Path) -> list[Dict[str, Any]]:
+    """
+    Run full pipeline: YOLO segmentation -> crop each object -> classify with Gemini.
+    Returns a list of detections (one per detected object).
+    """
+    detections = []
+    
+    try:
+        # Load YOLO segmentation module
+        yolo_seg_path = TRASH_DET_DIR / "yolo_segment.py"
+        yolo_seg = _load_module_from_path("yolo_segment_mod", yolo_seg_path)
+        if not yolo_seg or not hasattr(yolo_seg, "segment"):
+            print(f"[segment_and_classify] YOLO segment module not found, using fallback", flush=True)
+            # Fallback to single full-frame classification
+            return [classify_image_with_premade(image_path)]
+        
+        # Load trash analyzer for crop + classify
+        trash_analyzer = _load_module_from_path("trash_analyzer_mod", TRASH_ANALYZER_PATH)
+        if not trash_analyzer:
+            print(f"[segment_and_classify] trash_analyzer not found, using fallback", flush=True)
+            return [classify_image_with_premade(image_path)]
+        
+        # Load image
+        img = Image.open(image_path).convert("RGB")
+        img_np = np.array(img)
+        
+        # Run YOLO segmentation
+        print(f"[segment_and_classify] Running YOLO segmentation on {image_path}", flush=True)
+        masks = yolo_seg.segment(img, model_path=str(MODEL_PATH))  # type: ignore[attr-defined]
+        
+        if not masks:
+            print(f"[segment_and_classify] No objects detected, using full-frame classification", flush=True)
+            return [classify_image_with_premade(image_path)]
+        
+        print(f"[segment_and_classify] Found {len(masks)} objects", flush=True)
+        
+        # Save crops directory
+        crops_dir = TRASH_DET_DIR / ".trash_crops"
+        crops_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Process each mask
+        for i, mask in enumerate(masks):
+            try:
+                # Crop the object region
+                crop = trash_analyzer.crop_mask_region(img, mask, pad=6)  # type: ignore[attr-defined]
+                if crop is None:
+                    continue
+                
+                # Save crop for debugging
+                timestamp = int(time.time() * 1000)
+                crop_filename = f"crop_{timestamp}_{i}.png"
+                crop_path = crops_dir / crop_filename
+                crop.save(str(crop_path))
+                print(f"[segment_and_classify] Saved crop {i}: {crop_path}", flush=True)
+                
+                # Classify with Gemini (with verbose logging)
+                print(f"\n{'='*80}", flush=True)
+                print(f"🔍 SENDING TO GEMINI - Object {i+1}/{len(masks)}", flush=True)
+                print(f"{'='*80}", flush=True)
+                print(f"📸 Image size: {crop.size[0]}x{crop.size[1]} pixels", flush=True)
+                print(f"📦 Image format: PNG", flush=True)
+                print(f"💾 Saved to: {crop_path}", flush=True)
+                print(f"\n⏳ Waiting for Gemini response...\n", flush=True)
+                
+                label, raw_text, _prompt = trash_analyzer.classify_with_gemini(crop, debug=True)  # type: ignore[attr-defined]
+                
+                print(f"\n{'='*80}", flush=True)
+                print(f"📨 GEMINI RESPONSE - Object {i+1}", flush=True)
+                print(f"{'='*80}", flush=True)
+                if raw_text:
+                    print(f"Raw response ({len(raw_text)} chars):", flush=True)
+                    print(f"{raw_text}", flush=True)
+                else:
+                    print(f"❌ No response received from Gemini", flush=True)
+                print(f"{'='*80}\n", flush=True)
+                
+                # Parse Gemini response
+                data: Dict[str, Any] = {}
+                if raw_text:
+                    try:
+                        clean = raw_text.replace("```json", "").replace("```", "").strip()
+                        data = json.loads(clean)
+                        print(f"✅ Successfully parsed JSON response", flush=True)
+                        print(f"   Label: {data.get('label', 'N/A')}", flush=True)
+                        print(f"   Threat Level: {data.get('threat_level', 'N/A')}", flush=True)
+                        print(f"   Decomposition: {data.get('decomposition_years', 'N/A')} years", flush=True)
+                    except Exception as e:
+                        print(f"⚠️  Failed to parse JSON: {e}", flush=True)
+                        print(f"   Using raw text as label", flush=True)
+                        data = {}
+                
+                if not data:
+                    data = {
+                        "label": (label or f"Trash Object {i+1}"),
+                        "threat_level": "Medium",
+                        "decomposition_years": 100,
+                        "environmental_impact": "No structured analysis available.",
+                        "disposal_instructions": "Refer to local recycling guidance.",
+                        "probable_source": "Unknown",
+                    }
+                
+                detection = {
+                    "label": data.get("label", label or f"Trash Object {i+1}"),
+                    "threat_level": data.get("threat_level", "Medium"),
+                    "decomposition_years": data.get("decomposition_years", 100),
+                    "environmental_impact": data.get("environmental_impact", "Environmental impact data unavailable."),
+                    "disposal_instructions": data.get("disposal_instructions", "Disposal instructions unavailable."),
+                    "probable_source": data.get("probable_source", "Unknown"),
+                    "crop_path": crop_path,  # Keep track of crop path for later copying
+                }
+                detections.append(detection)
+                print(f"[segment_and_classify] Object {i}: {detection['label']}", flush=True)
+                
+            except Exception as e:
+                print(f"[segment_and_classify] Error processing mask {i}: {e}", flush=True)
+                continue
+        
+        if not detections:
+            print(f"[segment_and_classify] No valid crops, using full-frame classification", flush=True)
+            return [classify_image_with_premade(image_path)]
+        
+        return detections
+        
+    except Exception as e:
+        print(f"[segment_and_classify] Pipeline failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        # Fallback to single full-frame classification
+        return [classify_image_with_premade(image_path)]
 # -----------------------------
 # Flask app
 # -----------------------------
@@ -292,20 +506,89 @@ def upload_image():
     tmp_path = OUTPUTS_DIR / f"tmp_{int(time.time()*1000)}{suffix}"
     file.save(str(tmp_path))
 
-    # Classify via Gemini (or fallback)
-    gemini_data = classify_image_with_gemini(tmp_path)
+    # Run full segmentation + crop + classify pipeline
+    print(f"[upload-image] Starting segmentation pipeline for {tmp_path}", flush=True)
+    detections = segment_and_classify_frame(tmp_path)
+    print(f"[upload-image] Pipeline returned {len(detections)} detection(s)", flush=True)
 
-    # Copy to public and get public URL
-    public_url = copy_image_to_public(tmp_path)
-
-    # Forward as detection to Next.js
-    ok, err = send_detection_to_dashboard(
-        image_url=public_url,
-        gemini_data=gemini_data,
-        confidence=95,
-        location="Uploaded Image",
-        size="Medium",
-    )
+    # Send each detection to dashboard
+    send_helpers = _load_module_from_path("send_to_dashboard_mod", SEND_TO_DASHBOARD_PATH)
+    sent_count = 0
+    errors = []
+    
+    for idx, detection in enumerate(detections):
+        try:
+            # Copy crop to public (use crop_path if available, otherwise use original image)
+            crop_source = detection.pop("crop_path", tmp_path)
+            
+            public_url = None
+            if send_helpers and hasattr(send_helpers, "copy_image_to_public"):
+                try:
+                    public_url = send_helpers.copy_image_to_public(Path(crop_source))  # type: ignore[attr-defined]
+                    print(f"[upload-image] Detection {idx}: Used premade helper, public_url={public_url}", flush=True)
+                except Exception as e:
+                    print(f"[upload-image] Detection {idx}: Premade helper failed: {e}", flush=True)
+                    public_url = None
+            
+            if not public_url:
+                public_url = copy_image_to_public(Path(crop_source))
+                print(f"[upload-image] Detection {idx}: Used built-in copy, public_url={public_url}", flush=True)
+            
+            # Normalize extension if needed
+            normalized_url = _normalize_public_image_url(public_url)
+            if normalized_url != public_url:
+                try:
+                    old_name = public_url.rsplit("/", 1)[-1]
+                    new_name = normalized_url.rsplit("/", 1)[-1]
+                    old_path = DETECTIONS_DIR / old_name
+                    new_path = DETECTIONS_DIR / new_name
+                    if old_path.exists() and not new_path.exists():
+                        old_path.rename(new_path)
+                    public_url = normalized_url
+                except Exception as e:
+                    print(f"[upload-image] Detection {idx}: Normalization failed: {e}", flush=True)
+            
+            # Verify file exists
+            final_filename = public_url.rsplit("/", 1)[-1]
+            final_path = DETECTIONS_DIR / final_filename
+            print(f"[upload-image] Detection {idx}: {final_path} exists={final_path.exists()}", flush=True)
+            
+            # Send to dashboard
+            ok = False
+            if send_helpers and hasattr(send_helpers, "send_detection_to_dashboard"):
+                try:
+                    ok = bool(
+                        send_helpers.send_detection_to_dashboard(  # type: ignore[attr-defined]
+                            image_url=public_url,
+                            gemini_data=detection,
+                            confidence=95,
+                            location="Captured Frame",
+                            size="Medium",
+                            dashboard_url=NEXT_DASHBOARD_URL,
+                        )
+                    )
+                except Exception as e:
+                    print(f"[upload-image] Detection {idx}: Dashboard send failed: {e}", flush=True)
+                    ok = False
+            else:
+                ok, err = send_detection_to_dashboard(
+                    image_url=public_url,
+                    gemini_data=detection,
+                    confidence=95,
+                    location="Captured Frame",
+                    size="Medium",
+                )
+            
+            if ok:
+                sent_count += 1
+                print(f"[upload-image] Detection {idx}: Successfully sent to dashboard", flush=True)
+            else:
+                errors.append(f"Detection {idx} failed to send")
+                
+        except Exception as e:
+            print(f"[upload-image] Detection {idx}: Error: {e}", flush=True)
+            errors.append(f"Detection {idx}: {str(e)}")
+            continue
 
     # Clean temp
     try:
@@ -313,10 +596,14 @@ def upload_image():
     except Exception:
         pass
 
-    res: Dict[str, Any] = {"image_url": public_url, "analysis": gemini_data, "forwarded_to_dashboard": ok}
-    if not ok and err:
-        res["dashboard_error"] = err
-        return jsonify(res), 202  # accepted but dashboard forward failed
+    res: Dict[str, Any] = {
+        "detections_found": len(detections),
+        "detections_sent": sent_count,
+        "success": sent_count > 0
+    }
+    if errors:
+        res["errors"] = errors
+    
     return jsonify(res)
 
 @app.get("/jobs/<job_id>/status")

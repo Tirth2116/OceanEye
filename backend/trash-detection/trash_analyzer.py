@@ -168,11 +168,22 @@ def classify_with_gemini(
 Respond ONLY with valid JSON, no markdown fences."""
 
     try:
+        if debug:
+            print("📝 PROMPT SENT TO GEMINI:", flush=True)
+            print("-" * 80, flush=True)
+            print(prompt, flush=True)
+            print("-" * 80, flush=True)
+            print(f"📤 Sending image ({len(image_bytes)} bytes) to Gemini API...", flush=True)
+        
         response = model.generate_content([prompt, {"mime_type": "image/png", "data": image_bytes}])
         raw_text = (response.text or "").strip()
+        
         if debug:
-            print("Gemini prompt:", prompt)
-            print("Gemini raw response:", raw_text)
+            print(f"✅ Received response from Gemini API", flush=True)
+            print("📥 GEMINI RAW RESPONSE:", flush=True)
+            print("-" * 80, flush=True)
+            print(raw_text, flush=True)
+            print("-" * 80, flush=True)
         
         # Try to parse JSON
         try:

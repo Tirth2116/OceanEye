@@ -26,9 +26,9 @@ except ImportError:
 def copy_image_to_public(crop_path: Path, public_dir: Optional[Path] = None) -> str:
     """Copy the crop image to Next.js public directory and return the public URL path."""
     if public_dir is None:
-        # Resolve repo root (two levels up from backend/trash-detection/)
-        script_dir = Path(__file__).resolve().parent
-        repo_root = script_dir.parents[2]
+        # Resolve repo root (one level up from backend/)
+        script_dir = Path(__file__).resolve().parent  # trash-detection/
+        repo_root = script_dir.parent.parent  # OceanHub/
         public_dir = repo_root / "frontend" / "public" / "detections"
     public_dir.mkdir(parents=True, exist_ok=True)
     

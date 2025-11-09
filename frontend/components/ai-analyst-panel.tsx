@@ -17,6 +17,7 @@ export function AiAnalystPanel() {
   const [outputUrl, setOutputUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
 
   const handleUploadClick = () => {
     fileInputRef.current?.click()
@@ -144,6 +145,7 @@ export function AiAnalystPanel() {
                 autoPlay
                 muted
                 crossOrigin="anonymous"
+                ref={videoRef}
               >
                 <source src={outputUrl} type="video/mp4" />
               </video>
@@ -156,6 +158,7 @@ export function AiAnalystPanel() {
                 autoPlay
                 loop
                 playsInline
+                ref={videoRef}
               >
                 <source src={previewUrl} type="video/mp4" />
               </video>
@@ -166,26 +169,6 @@ export function AiAnalystPanel() {
                 className="w-full h-full object-cover"
               />
             )}
-
-            {/* Stats Overlay */}
-            <div className="absolute bottom-4 left-4 right-4 glass-panel rounded-lg p-3">
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground text-xs">Detected Items</p>
-                  <p className="text-xl font-bold text-primary">127</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-xs">Confidence</p>
-                  <p className="text-xl font-bold text-accent">94.2%</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-xs">Processing</p>
-                  <p className="text-xl font-bold text-secondary">
-                    {processing ? "Processing…" : outputUrl ? "Completed" : "Idle"}
-                  </p>
-                </div>
-              </div>
-            </div>
 
             {/* Progress Overlay */}
             {processing && (
@@ -231,9 +214,76 @@ export function AiAnalystPanel() {
             <Upload className="h-4 w-4" />
             {uploading ? "Uploading..." : "Upload Video"}
           </Button>
-          <Button variant="outline" className="gap-2 border-border/50 hover:border-primary/50 bg-transparent">
+          <Button
+            variant="outline"
+            className="gap-2 border-border/50 hover:border-primary/50 bg-transparent"
+            onClick={async () => {
+              try {
+                const video = videoRef.current
+                if (!video) {
+                  alert("No video to capture. Upload or play a video first.")
+                  return
+                }
+                // Ensure we have frame data
+                if (video.readyState < 2 /* HAVE_CURRENT_DATA */) {
+                  await new Promise<void>((resolve) => {
+                    const onLoaded = () => {
+                      video.removeEventListener("loadeddata", onLoaded)
+                      resolve()
+                    }
+                    video.addEventListener("loadeddata", onLoaded, { once: true })
+                  })
+                }
+                const width = video.videoWidth || video.clientWidth
+                const height = video.videoHeight || video.clientHeight
+                if (!width || !height) {
+                  alert("Unable to capture frame from the current video.")
+                  return
+                }
+                const canvas = document.createElement("canvas")
+                canvas.width = width
+                canvas.height = height
+                const ctx = canvas.getContext("2d")
+                if (!ctx) {
+                  alert("Canvas context unavailable.")
+                  return
+                }
+                ctx.drawImage(video, 0, 0, width, height)
+                setIsAnalyzing(true)
+                const blob: Blob | null = await new Promise((resolve) =>
+                  canvas.toBlob((b) => resolve(b), "image/png", 0.92)
+                )
+                if (!blob) {
+                  setIsAnalyzing(false)
+                  alert("Failed to encode captured frame.")
+                  return
+                }
+                const file = new File([blob], `frame_${Date.now()}.png`, { type: "image/png" })
+                const fd = new FormData()
+                fd.append("file", file)
+                const res = await fetch("http://localhost:5001/upload-image", {
+                  method: "POST",
+                  body: fd,
+                })
+                const data = await res.json().catch(() => ({}))
+                setIsAnalyzing(false)
+                if (!res.ok) {
+                  console.error("Capture upload failed:", data)
+                  alert(`Capture failed: ${data?.error || res.statusText}`)
+                  return
+                }
+                // Success: backend already forwarded detection to dashboard.
+                // The right panel polls /api/detections every 2s and will reflect this.
+              } catch (e) {
+                setIsAnalyzing(false)
+                console.error(e)
+                alert("Capture failed. See console for details.")
+              }
+            }}
+            disabled={isAnalyzing}
+          >
             <Camera className="h-4 w-4" />
-            Capture Frame
+            {isAnalyzing ? "Analyzing…" : "Capture Frame"}
           </Button>
           <input
             ref={fileInputRef}
