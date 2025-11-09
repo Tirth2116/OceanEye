@@ -9,6 +9,7 @@ import { TrashHeatmap } from "@/components/trash-heatmap"
 import { NewTrashDetectionLog, type TrashDetection } from "@/components/new-trash-detection-log"
 import { SonarViewer } from "@/components/sonar-viewer"
 import { SwarmSimulation } from "@/components/swarm-simulation"
+import { SatelliteMonitor } from "@/components/satellite-monitor"
 
 interface DashboardViewProps {
   onBackToLanding?: () => void
@@ -16,6 +17,7 @@ interface DashboardViewProps {
 
 export function DashboardView({ onBackToLanding }: DashboardViewProps) {
   const [detections, setDetections] = useState<TrashDetection[]>([])
+  const [currentView, setCurrentView] = useState<string>("dashboard")
 
   // Poll for new detections every 2 seconds
   useEffect(() => {
@@ -58,42 +60,59 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <Header />
+      <Header activeView={currentView} onViewChange={setCurrentView} />
 
-      {/* Main Dashboard Grid */}
+      {/* Main Content */}
       <div className="container mx-auto px-4 pt-4 md:px-6 lg:px-8">
-        <Button variant="outline" size="sm" onClick={handleBackToLanding}>
+        <Button variant="outline" size="sm" onClick={handleBackToLanding} className="mb-6">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to landing
         </Button>
+
+        {/* Dashboard View - AI Analysis, Sonar, Heatmap & Detection Log */}
+        {currentView === "dashboard" && (
+          <div className="space-y-6">
+            {/* Top Row: AI Analyst and Detection Log */}
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <AiAnalystPanel />
+              </div>
+              <div>
+                <NewTrashDetectionLog detections={detections} />
+              </div>
+            </div>
+
+            {/* Bottom Row: Sonar and Heatmap side by side */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <SonarViewer />
+              <TrashHeatmap />
+            </div>
+
+            {/* Footer Message */}
+            <footer className="mt-12 text-center">
+              <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
+            </footer>
+          </div>
+        )}
+
+        {/* Swarm View */}
+        {currentView === "swarm" && (
+          <div className="space-y-6">
+            <SwarmSimulation />
+            
+            <footer className="mt-12 text-center">
+              <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
+            </footer>
+          </div>
+        )}
+
+        {/* Satellite View */}
+        {currentView === "satellite" && (
+          <div className="space-y-6">
+            <SatelliteMonitor />
+          </div>
+        )}
       </div>
-      <main className="container mx-auto px-4 py-8 md:px-6 lg:px-8">
-        <div className="grid gap-6 md:gap-8">
-          {/* Top Row - AI Analyst (larger) */}
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <AiAnalystPanel />
-            </div>
-            <div>
-              <NewTrashDetectionLog detections={detections} />
-            </div>
-          </div>
-
-          {/* Middle Row - Heatmap and Sonar */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <TrashHeatmap />
-            <SonarViewer />
-          </div>
-
-          {/* Bottom Row - Swarm Simulation */}
-          <SwarmSimulation />
-        </div>
-
-        {/* Footer Message */}
-        <footer className="mt-12 text-center">
-          <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
-        </footer>
-      </main>
     </div>
   )
 }

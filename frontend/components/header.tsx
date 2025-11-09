@@ -1,20 +1,22 @@
 "use client"
 
 import { useState } from "react"
-import { Waves, LayoutDashboard, Map, LineChart, Sparkles, Settings, User } from "lucide-react"
+import { Waves, LayoutDashboard, Radio, Satellite, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 const tabs = [
-  { name: "Dashboard", icon: LayoutDashboard, href: "#" },
-  { name: "Map", icon: Map, href: "#map" },
-  { name: "Analysis", icon: LineChart, href: "#analysis" },
-  { name: "Swarm Sim", icon: Sparkles, href: "#swarm" },
-  { name: "Settings", icon: Settings, href: "#settings" },
+  { name: "Dashboard", icon: LayoutDashboard, value: "dashboard" },
+  { name: "Swarm", icon: Radio, value: "swarm" },
+  { name: "Satellite", icon: Satellite, value: "satellite" },
 ]
 
-export function Header() {
-  const [activeTab, setActiveTab] = useState("Dashboard")
+interface HeaderProps {
+  activeView?: string
+  onViewChange?: (view: string) => void
+}
+
+export function Header({ activeView = "dashboard", onViewChange }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 glass-panel">
@@ -41,11 +43,11 @@ export function Header() {
                 size="sm"
                 className={cn(
                   "gap-2 transition-all duration-200",
-                  activeTab === tab.name
+                  activeView === tab.value
                     ? "bg-primary/20 text-primary border border-primary/30"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent/10",
                 )}
-                onClick={() => setActiveTab(tab.name)}
+                onClick={() => onViewChange?.(tab.value)}
               >
                 <Icon className="h-4 w-4" />
                 <span className="font-medium">{tab.name}</span>

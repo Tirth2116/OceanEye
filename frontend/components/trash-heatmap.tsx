@@ -34,7 +34,20 @@ export function TrashHeatmap() {
         <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-muted/20 border border-border/30 mb-4">
           {/* Simulated Map */}
           <div className="relative h-full">
-            <img src="/ocean-map-with-coordinates-satellite-view.jpg" alt="Ocean map" className="w-full h-full object-cover opacity-80" />
+            <div 
+              className="w-full h-full" 
+              style={{
+                background: 'linear-gradient(135deg, #0a4d68 0%, #088395 25%, #05bfdb 50%, #00a8cc 75%, #0a4d68 100%)',
+                backgroundSize: '400% 400%',
+                animation: 'ocean-wave 15s ease infinite'
+              }}
+            >
+              {/* Ocean texture overlay */}
+              <div className="absolute inset-0 opacity-30" style={{
+                backgroundImage: 'radial-gradient(circle at 20% 50%, transparent 30%, rgba(0,0,0,0.1) 30.1%, transparent 31%), radial-gradient(circle at 60% 70%, transparent 20%, rgba(255,255,255,0.05) 20.1%, transparent 21%), radial-gradient(circle at 80% 30%, transparent 25%, rgba(0,0,0,0.1) 25.1%, transparent 26%)',
+                backgroundSize: '100px 100px'
+              }} />
+            </div>
 
             {/* Heatmap Clusters */}
             <div className="absolute inset-0">
