@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 import shutil
 from pathlib import Path
@@ -33,6 +34,17 @@ from werkzeug.utils import secure_filename
 import requests
 import re
 from PIL import Image
+
+# Import satellite monitor
+SATELLITE_AVAILABLE = False
+try:
+    from satellite_monitor import get_monitor
+    SATELLITE_AVAILABLE = True
+    print("✓ Satellite monitor loaded successfully")
+except ImportError as e:
+    print(f"⚠ Satellite monitor not available (using mock data): {e}")
+except Exception as e:
+    print(f"⚠ Error loading satellite monitor: {e}")
 
 try:
     import google.generativeai as genai  # type: ignore
@@ -62,7 +74,8 @@ OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 NEXT_DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:3000")
-PYTHON_BIN = os.environ.get("PYTHON_BIN", "python3")
+# Use current Python interpreter (works cross-platform)
+PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable or "python")
 YOLO_SCRIPT = THIS_DIR / "yolov8_seg_track.py"
 TRASH_DET_DIR = THIS_DIR / "trash-detection"
 TRASH_ANALYZER_PATH = TRASH_DET_DIR / "trash_analyzer.py"
@@ -392,6 +405,154 @@ CORS(app, resources={r"*": {"origins": "*"}})
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
+
+
+@app.route("/api/satellite/time-series", methods=["GET"])
+def get_satellite_time_series():
+    """Get satellite monitoring time series data"""
+    try:
+        from datetime import datetime, timedelta
+        import random
+        
+        # Get parameters from query
+        start_date = request.args.get('start_date', 
+                                      (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d'))
+        end_date = request.args.get('end_date', 
+                                    datetime.now().strftime('%Y-%m-%d'))
+        
+        if SATELLITE_AVAILABLE:
+            # Use real satellite monitor
+            aoi_coords = [72.775, 18.875, 72.985, 19.255]
+            monitor = get_monitor()
+            data = monitor.get_time_series_data(aoi_coords, start_date, end_date)
+            fdi_values = [d['fdi'] for d in data if d.get('fdi') is not None]
+            analysis = monitor.analyze_pollution_level(fdi_values)
+        else:
+            # Generate mock data directly
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            data = []
+            current = start
+            base_pollution = 0.35
+            
+            while current <= end:
+                data.append({
+                    'date': current.strftime('%Y-%m-%d'),
+                    'ndci': round(0.2 + random.uniform(-0.05, 0.05), 3),
+                    'ndwi': round(0.4 + random.uniform(-0.1, 0.1), 3),
+                    'ndvi': round(0.15 + random.uniform(-0.05, 0.05), 3),
+                    'fdi': round(base_pollution + random.uniform(-0.1, 0.1), 3)
+                })
+                current += timedelta(days=7)
+            
+            # Calculate analysis
+            fdi_values = [d['fdi'] for d in data]
+            avg_fdi = sum(fdi_values) / len(fdi_values)
+            recent_avg = sum(fdi_values[-3:]) / min(3, len(fdi_values))
+            older_avg = sum(fdi_values[:3]) / min(3, len(fdi_values))
+            
+            if avg_fdi < 0.2:
+                status = 'excellent'
+                level = 1
+            elif avg_fdi < 0.4:
+                status = 'good'
+                level = 2
+            elif avg_fdi < 0.6:
+                status = 'moderate'
+                level = 3
+            elif avg_fdi < 0.8:
+                status = 'poor'
+                level = 4
+            else:
+                status = 'critical'
+                level = 5
+            
+            if recent_avg > older_avg + 0.05:
+                trend = 'worsening'
+            elif recent_avg < older_avg - 0.05:
+                trend = 'improving'
+            else:
+                trend = 'stable'
+            
+            analysis = {
+                'status': status,
+                'level': level,
+                'trend': trend,
+                'avgFdi': round(avg_fdi, 3),
+                'recentAvg': round(recent_avg, 3)
+            }
+        
+        return jsonify({
+            "success": True,
+            "data": data,
+            "analysis": analysis,
+            "aoi": {
+                "name": "Mumbai Coast",
+                "center": [19.0760, 72.8877]
+            },
+            "usingMockData": not SATELLITE_AVAILABLE
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in satellite time series: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/satellite/summary", methods=["GET"])
+def get_satellite_summary():
+    """Get summary of satellite monitoring data"""
+    try:
+        from datetime import datetime, timedelta
+        import random
+        
+        # Get last 30 days of data
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        if SATELLITE_AVAILABLE:
+            aoi_coords = [72.775, 18.875, 72.985, 19.255]
+            monitor = get_monitor()
+            data = monitor.get_time_series_data(aoi_coords, start_date, end_date)
+            fdi_values = [d['fdi'] for d in data if d.get('fdi') is not None]
+            analysis = monitor.analyze_pollution_level(fdi_values)
+        else:
+            # Mock data
+            data = [{
+                'date': datetime.now().strftime('%Y-%m-%d'),
+                'ndci': 0.22,
+                'ndwi': 0.41,
+                'ndvi': 0.16,
+                'fdi': 0.34
+            }]
+            analysis = {
+                'status': 'moderate',
+                'level': 3,
+                'trend': 'stable',
+                'avgFdi': 0.34,
+                'recentAvg': 0.34
+            }
+        
+        if not data:
+            return jsonify({"error": "No data available"}), 404
+        
+        latest = data[-1]
+        
+        return jsonify({
+            "success": True,
+            "latest": latest,
+            "analysis": analysis,
+            "dataPoints": len(data),
+            "usingMockData": not SATELLITE_AVAILABLE
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in satellite summary: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.post("/upload-video")
