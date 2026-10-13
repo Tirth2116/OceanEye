@@ -3,15 +3,13 @@
 import { useState, useEffect } from "react"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Waves } from "lucide-react"
+import { ShaderAnimation } from "@/components/ui/shader-animation"
 import { AiAnalystPanel } from "@/components/ai-analyst-panel"
 import { TrashHeatmap } from "@/components/trash-heatmap"
 import { NewTrashDetectionLog, type TrashDetection } from "@/components/new-trash-detection-log"
 import { SonarViewer } from "@/components/sonar-viewer"
-import { SwarmSimulation } from "@/components/swarm-simulation"
-import { SwarmPathVisualizer } from "@/components/swarm-path-visualizer"
 import { PathVisualizer } from "@/components/path-visualizer"
-import { SatelliteMonitor } from "@/components/satellite-monitor"
 import { SatelliteCityAnalyzer } from "@/components/satellite-city-analyzer"
 
 interface DashboardViewProps {
@@ -22,16 +20,14 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
   const [detections, setDetections] = useState<TrashDetection[]>([])
   const [currentView, setCurrentView] = useState<string>("dashboard")
 
-  // Poll for new detections every 2 seconds
   useEffect(() => {
     const fetchDetections = async () => {
       try {
         const response = await fetch("/api/detections")
         if (response.ok) {
           const data = await response.json()
-          // Filter out "Medium" threat level detections
           const filtered = (data.detections || []).filter(
-            (d: TrashDetection) => d.threatLevel !== "Medium"
+            (d: TrashDetection) => d.threatLevel !== "Medium",
           )
           setDetections(filtered)
         }
@@ -40,16 +36,11 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
       }
     }
 
-    // Initial fetch
     fetchDetections()
-
-    // Poll every 2 seconds
     const interval = setInterval(fetchDetections, 2000)
-
     return () => clearInterval(interval)
   }, [])
 
-  // Clear detections and go back to landing
   const handleBackToLanding = async () => {
     try {
       await fetch("/api/detections", { method: "DELETE" })
@@ -60,22 +51,42 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
     onBackToLanding?.()
   }
 
+  if (currentView === "visualizer") {
+    return (
+      <div className="bg-background">
+        <Header activeView={currentView} onViewChange={setCurrentView} />
+        <PathVisualizer />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <Header activeView={currentView} onViewChange={setCurrentView} />
 
-      {/* Main Content */}
       <div className="container mx-auto px-4 pt-4 md:px-6 lg:px-8">
         <Button variant="outline" size="sm" onClick={handleBackToLanding} className="mb-6">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to landing
         </Button>
 
-        {/* Dashboard View - AI Analysis, Sonar, Heatmap & Detection Log */}
+        <div className="relative mb-8 flex h-[200px] w-full items-center justify-center overflow-hidden rounded-xl border border-border/40">
+          <ShaderAnimation />
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-center">
+            <div className="flex items-center gap-2">
+              <Waves className="h-6 w-6 text-sky-200" />
+              <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+                Ocean<span className="text-sky-300">Eye</span> Dashboard
+              </h2>
+            </div>
+            <p className="max-w-md text-sm text-blue-100/80">
+              Real-time marine waste monitoring &amp; AI-powered analytics
+            </p>
+          </div>
+        </div>
+
         {currentView === "dashboard" && (
           <div className="space-y-6">
-            {/* Top Row: AI Analyst and Detection Log */}
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <AiAnalystPanel />
@@ -85,41 +96,22 @@ export function DashboardView({ onBackToLanding }: DashboardViewProps) {
               </div>
             </div>
 
-            {/* Bottom Row: Sonar and Heatmap side by side */}
             <div className="grid gap-6 md:grid-cols-2">
               <SonarViewer />
               <TrashHeatmap />
             </div>
 
-            {/* Footer Message */}
             <footer className="mt-12 text-center">
-              <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
+              <p className="text-lg italic text-muted-foreground">
+                {"Protect the water that protects life."}
+              </p>
             </footer>
           </div>
         )}
 
-        {/* Swarm View */}
-        {currentView === "swarm" && (
-          <div className="space-y-6">
-            <SwarmPathVisualizer />
-            
-            <footer className="mt-12 text-center">
-              <p className="text-lg text-muted-foreground italic">{"Protect the water that protects life."}</p>
-            </footer>
-          </div>
-        )}
-
-        {/* Satellite View */}
         {currentView === "satellite" && (
           <div className="space-y-6">
             <SatelliteCityAnalyzer />
-          </div>
-        )}
-
-        {/* Visualizer View */}
-        {currentView === "visualizer" && (
-          <div className="space-y-6">
-            <PathVisualizer />
           </div>
         )}
       </div>

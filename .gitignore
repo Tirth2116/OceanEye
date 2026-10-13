@@ -35,3 +35,25 @@ next-env.d.ts
 # backend artifacts
 backend/outputs/
 backend/uploads/
+
+# OS / Python
+.DS_Store
+**/__pycache__/
+
+# secrets
+backend/trash-detection/config.env
+
+# runtime artifacts
+backend/trash-detection/.trash_crops/
+**/.trash_analyzer_seen.json
+frontend/public/detections/
+
+# scratch / training leftovers
+/main.py
+/set
+yolov8m-seg-16class/
+Trashcan_YOLOV8_Material.ipynb
+
+# only backend/best.pt is versioned
+*.pt
+!backend/best.pt

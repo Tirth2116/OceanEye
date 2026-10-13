@@ -95,7 +95,7 @@ OceanHub/
 │  ├─ package.json  next.config.mjs
 │  └─ /api/detections (in-memory API) # GET/POST/DELETE
 │
-└─ Visual/                            # Additional visualizations / docs
+└─ (see PROJECT_OVERVIEW.md for architecture notes)
 ```
 
 
